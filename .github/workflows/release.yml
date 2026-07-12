@@ -65,6 +65,7 @@ jobs:
     needs: [check_changes]
     if: |
       !failure() && !cancelled() &&
+      (needs.check_changes.result == 'success' || needs.check_changes.result == 'skipped') &&
       (github.event_name != 'schedule' || needs.check_changes.outputs.has_changes == 'true')
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10

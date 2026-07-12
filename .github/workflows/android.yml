@@ -24,7 +24,6 @@ on:
           - release
   push:
     tags:
-      - "v*"
       - "android-*"
 
 permissions:
@@ -37,11 +36,11 @@ concurrency:
 
 jobs:
   build-apk:
-    name: Build APK (${{ inputs.variant || 'preview' }})
+    name: Build APK (${{ inputs.variant || 'production' }})
     uses: ./.github/workflows/build-android-apk.yml
     with:
-      app_variant: ${{ inputs.variant || 'preview' }}
-      build_type: ${{ inputs.build-type || 'debug' }}
+      app_variant: ${{ inputs.variant || 'production' }}
+      build_type: ${{ inputs.build-type || 'release' }}
       build_version: ${{ github.ref_name }}
       runs_on: ubuntu-latest
     secrets: inherit

@@ -134,6 +134,41 @@ jobs:
         # Note: Release builds may require signing configuration.
         # Set KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD secrets for production signing.
 
+      - name: Sign APK (Release)
+        if: env.BUILD_TYPE == 'release'
+        working-directory: apps/mobile/android
+        run: |
+          unsigned_apk=$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f | head -n 1)
+          if [ -z "$unsigned_apk" ]; then
+            echo "No unsigned APK found in app/build/outputs/apk/release"
+            exit 1
+          fi
+
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f -print -quit)
+          zipalign=$(find "$ANDROID_HOME/build-tools" -name zipalign -type f -print -quit)
+          if [ -z "$apksigner" ] || [ -z "$zipalign" ]; then
+            echo "apksigner or zipalign not found in \$ANDROID_HOME/build-tools"
+            exit 1
+          fi
+
+          keytool -genkey -v \
+            -keystore release.keystore \
+            -alias debug \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass debugdebug -keypass debugdebug \
+            -dname "CN=Debug"
+
+          "$zipalign" -p 4 "$unsigned_apk" app-release-aligned.apk
+          "$apksigner" sign \
+            --ks release.keystore \
+            --ks-pass pass:debugdebug \
+            --key-pass pass:debugdebug \
+            --out app-release-signed.apk \
+            app-release-aligned.apk
+
+          rm -f "$unsigned_apk" app-release-aligned.apk
+          mv app-release-signed.apk "$unsigned_apk"
+
       - name: Locate built APK
         id: apk-location
         working-directory: apps/mobile/android

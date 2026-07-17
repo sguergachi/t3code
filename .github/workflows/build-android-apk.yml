@@ -73,6 +73,8 @@ jobs:
       # Monotonic versionCode so sideload updates install over previous CI APKs.
       # Prefer explicit input; otherwise use github.run_number (always >= 1).
       ANDROID_VERSION_CODE: ${{ inputs.android_version_code > 0 && inputs.android_version_code || github.run_number }}
+      # Enable apps/mobile/plugins/withAndroidCiSigning.cjs → stable release signing.
+      T3CODE_ANDROID_CI_SIGNING: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -128,62 +130,46 @@ jobs:
         if: env.BUILD_TYPE == 'debug'
         working-directory: apps/mobile/android
         run: |
+          # Universal ABI so the APK installs on phones + emulators (not arm64-only).
           ./gradlew assembleDebug \
             -Dorg.gradle.java.home=$JAVA_HOME \
-            -PreactNativeArchitectures=arm64-v8a
+            -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64
 
       - name: Build APK (Release)
         if: env.BUILD_TYPE == 'release'
         working-directory: apps/mobile/android
         run: |
+          # Signed by withAndroidCiSigning (stable keystore). Universal ABI so
+          # install is not limited to arm64-v8a devices.
           ./gradlew assembleRelease \
             -Dorg.gradle.java.home=$JAVA_HOME \
-            -PreactNativeArchitectures=arm64-v8a
-        # Note: Release builds may require signing configuration.
-        # Set KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD secrets for production signing.
+            -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64
 
-      - name: Sign APK (Release)
+      - name: Verify release APK signature
         if: env.BUILD_TYPE == 'release'
         working-directory: apps/mobile/android
         run: |
           set -euo pipefail
 
-          unsigned_apk=$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f | head -n 1)
-          if [ -z "$unsigned_apk" ]; then
-            echo "No unsigned APK found in app/build/outputs/apk/release"
+          apk=$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f | head -n 1)
+          if [ -z "$apk" ]; then
+            echo "No release APK found" >&2
             exit 1
           fi
 
           apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f -print -quit)
-          zipalign=$(find "$ANDROID_HOME/build-tools" -name zipalign -type f -print -quit)
-          if [ -z "$apksigner" ] || [ -z "$zipalign" ]; then
-            echo "apksigner or zipalign not found in \$ANDROID_HOME/build-tools"
+          if [ -z "$apksigner" ]; then
+            echo "apksigner not found" >&2
             exit 1
           fi
 
-          # Use a committed, stable CI keystore so every build has the same
-          # signing certificate. Generating a new keystore per run was breaking
-          # in-place updates (INSTALL_FAILED_UPDATE_INCOMPATIBLE).
-          keystore="$GITHUB_WORKSPACE/apps/mobile/ci/android-ci.keystore"
-          if [ ! -f "$keystore" ]; then
-            echo "Missing stable CI keystore at $keystore" >&2
+          # Must be signed with the stable CI cert (not an ephemeral key).
+          "$apksigner" verify --print-certs "$apk" | tee /tmp/apk-certs.txt
+          if ! grep -q 'CN=T3 Code CI' /tmp/apk-certs.txt; then
+            echo "Release APK is not signed with the stable T3 Code CI keystore." >&2
+            echo "Ensure T3CODE_ANDROID_CI_SIGNING=1 and apps/mobile/ci/android-ci.keystore exist." >&2
             exit 1
           fi
-          ks_pass='t3code-ci-store'
-          key_alias='t3code-ci'
-
-          "$zipalign" -p 4 "$unsigned_apk" app-release-aligned.apk
-          "$apksigner" sign \
-            --ks "$keystore" \
-            --ks-pass "pass:${ks_pass}" \
-            --ks-key-alias "$key_alias" \
-            --key-pass "pass:${ks_pass}" \
-            --out app-release-signed.apk \
-            app-release-aligned.apk
-
-          rm -f "$unsigned_apk" app-release-aligned.apk
-          mv app-release-signed.apk "$unsigned_apk"
-          "$apksigner" verify --print-certs "$unsigned_apk"
 
       - name: Locate built APK
         id: apk-location

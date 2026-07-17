@@ -1,8 +1,13 @@
 name: Mobile APK Build
 
-# Build standalone APK for Android and publish it to a GitHub Release.
-# Manual builds update the rolling `android-latest` release (overwriting the
-# previous APK). Pushes of `android-*` tags publish a release for that tag.
+# Build a sideloadable Android APK and publish it to the rolling
+# `android-latest` GitHub Release (or to a pushed `android-*` tag).
+#
+# Installable design choices:
+# - Stable CI keystore (same cert every run) so later builds can update earlier ones
+# - Dedicated applicationId `com.t3tools.t3code.sideload` so this never conflicts
+#   with older `com.t3tools.t3code` installs that used one-off signing keys
+# - Monotonic versionCode from the workflow run number
 on:
   workflow_dispatch:
     inputs:
@@ -10,19 +15,19 @@ on:
         description: "App variant to build"
         required: true
         type: choice
-        default: development
+        default: production
         options:
-          - development
-          - preview
           - production
+          - preview
+          - development
       build-type:
-        description: "Build type (debug or release)"
+        description: "Build type"
         required: true
         type: choice
-        default: debug
+        default: release
         options:
-          - debug
           - release
+          - debug
   push:
     tags:
       - "android-*"
@@ -44,6 +49,8 @@ jobs:
       build_type: ${{ inputs.build-type || 'release' }}
       build_version: ${{ github.ref_name }}
       runs_on: ubuntu-latest
+      # Never collide with an older store/sideload install of com.t3tools.t3code.
+      android_package_override: com.t3tools.t3code.sideload
     secrets: inherit
 
   publish-release:
@@ -56,9 +63,6 @@ jobs:
     steps:
       - id: app_token
         name: Mint release app token
-        # Optional: prefer the release GitHub App when configured (matches
-        # desktop release.yml). Fall back to GITHUB_TOKEN when secrets are
-        # missing so forks/personal repos can still publish APKs.
         continue-on-error: true
         uses: actions/create-github-app-token@v2
         with:
@@ -73,7 +77,7 @@ jobs:
           merge-multiple: true
           path: release-assets
 
-      - name: Resolve release metadata
+      - name: Prepare release assets
         id: meta
         env:
           VARIANT: ${{ inputs.variant || 'production' }}
@@ -83,33 +87,20 @@ jobs:
 
           shopt -s nullglob
           apk_files=(release-assets/*.apk)
-          if (( ${#apk_files[@]} == 0 )); then
-            echo "No APK files found in release-assets/" >&2
+          if (( ${#apk_files[@]} != 1 )); then
+            echo "Expected exactly one APK, found ${#apk_files[@]}:" >&2
             ls -la release-assets/ >&2 || true
-            exit 1
-          fi
-          if (( ${#apk_files[@]} > 1 )); then
-            echo "Expected exactly one APK artifact, found ${#apk_files[@]}:" >&2
-            printf '  %s\n' "${apk_files[@]}" >&2
             exit 1
           fi
 
           source_apk="${apk_files[0]}"
           mkdir -p release-publish
 
-          # Stable download names so each build overwrites the previous APK
-          # instead of accumulating versioned assets on the rolling release.
-          stable_name="t3code-android-${VARIANT}-${BUILD_TYPE}.apk"
-          cp "$source_apk" "release-publish/${stable_name}"
-
-          # Canonical name for the default production release APK.
-          if [[ "$VARIANT" == "production" && "$BUILD_TYPE" == "release" ]]; then
-            cp "$source_apk" "release-publish/t3code-android.apk"
-          fi
+          # Always publish a stable name so the download URL never changes.
+          cp "$source_apk" release-publish/t3code-android.apk
+          cp "$source_apk" "release-publish/t3code-android-${VARIANT}-${BUILD_TYPE}.apk"
 
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            # Also keep the original versioned filename on tag releases.
-            cp "$source_apk" "release-publish/$(basename "$source_apk")"
             echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
             echo "name=Android APK ${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           else
@@ -129,41 +120,41 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: ${{ steps.meta.outputs.name }}
           body: |
-            Automated Android APK build.
+            ## Install
+
+            **Download:** [t3code-android.apk](https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/t3code-android.apk)
 
             | | |
             |---|---|
-            | **Variant** | `${{ steps.meta.outputs.variant }}` |
-            | **Build type** | `${{ steps.meta.outputs.build_type }}` |
+            | **Package** | `com.t3tools.t3code.sideload` |
+            | **Variant** | `${{ steps.meta.outputs.variant }}` / `${{ steps.meta.outputs.build_type }}` |
             | **Commit** | `${{ steps.meta.outputs.sha_short }}` |
-            | **Workflow run** | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} |
+            | **Workflow** | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} |
 
-            This release is updated on every Mobile APK Build. Download `t3code-android.apk` (production/release) or the variant-specific APK below.
+            This package id is **only** for GitHub sideload builds. It will not
+            conflict with an older `com.t3tools.t3code` install. Every build uses
+            the same CI signing key so future APKs can update this install.
+
+            ### Phone tips
+            1. Open the download link in **Chrome** (not the GitHub app)
+            2. Allow **Install unknown apps** for Chrome / Files
+            3. Open the finished download from **Downloads**
           prerelease: true
           make_latest: false
-          files: |
-            release-publish/*.apk
+          files: release-publish/*.apk
           fail_on_unmatched_files: true
           overwrite_files: true
-          # Prefer the release app token when present; otherwise GITHUB_TOKEN.
           token: ${{ steps.app_token.outputs.token || github.token }}
 
-      - name: Generate publish summary
+      - name: Summary
         if: always()
         run: |
           {
-            echo "## APK Release Publish"
+            echo "## APK Release"
             echo ""
             echo "- **Tag**: \`${{ steps.meta.outputs.tag }}\`"
-            echo "- **Variant**: ${{ steps.meta.outputs.variant }}"
-            echo "- **Build type**: ${{ steps.meta.outputs.build_type }}"
             echo "- **Status**: ${{ job.status }}"
             if [ "${{ job.status }}" = "success" ]; then
-              echo ""
-              echo "✅ APK published to GitHub Release"
-              echo "📦 https://github.com/${{ github.repository }}/releases/tag/${{ steps.meta.outputs.tag }}"
-            else
-              echo ""
-              echo "❌ Failed to publish APK to GitHub Release"
+              echo "- **Download**: https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/t3code-android.apk"
             fi
           } >> "$GITHUB_STEP_SUMMARY"

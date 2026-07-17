@@ -72,6 +72,10 @@ const VARIANT_CONFIG = {
   },
 } as const;
 
+// Optional override for CI / local experiments. Must be reverse-DNS.
+// Prefer leaving unset so variant packages stay stable.
+const ANDROID_PACKAGE_OVERRIDE = process.env.T3CODE_ANDROID_PACKAGE_OVERRIDE?.trim();
+
 function resolveAppVariant(value: string | undefined): AppVariant {
   switch (value) {
     case "development":
@@ -195,7 +199,10 @@ const config: ExpoConfig = {
   },
   android: {
     icon: variant.assets.appIcon,
-    package: variant.androidPackage,
+    package:
+      ANDROID_PACKAGE_OVERRIDE && ANDROID_PACKAGE_OVERRIDE.length > 0
+        ? ANDROID_PACKAGE_OVERRIDE
+        : variant.androidPackage,
     // Bump for sideload updates. CI sets ANDROID_VERSION_CODE (e.g. run number).
     // Without this every release APK ships versionCode 1 and devices refuse updates.
     versionCode: resolveAndroidVersionCode(process.env.ANDROID_VERSION_CODE),
@@ -312,6 +319,7 @@ const config: ExpoConfig = {
     "./plugins/withIosSceneLifecycle.cjs",
     "./plugins/withAndroidCleartextTraffic.cjs",
     "./plugins/withAndroidGradleHeap.cjs",
+    "./plugins/withAndroidCiSigning.cjs",
     "./plugins/withAndroidModernPopupMenu.cjs",
     "./plugins/withAndroidModernAlertDialog.cjs",
     "./plugins/withAndroidPredictiveBackCompat.cjs",

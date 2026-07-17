@@ -137,20 +137,19 @@ jobs:
         if: env.BUILD_TYPE == 'debug'
         working-directory: apps/mobile/android
         run: |
-          # Universal ABI so the APK installs on phones + emulators (not arm64-only).
+          # arm64-v8a (primary Android phone ABI).
           ./gradlew assembleDebug \
             -Dorg.gradle.java.home=$JAVA_HOME \
-            -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64
+            -PreactNativeArchitectures=arm64-v8a
 
       - name: Build APK (Release)
         if: env.BUILD_TYPE == 'release'
         working-directory: apps/mobile/android
         run: |
-          # Signed by withAndroidCiSigning (stable keystore). Universal ABI so
-          # install is not limited to arm64-v8a devices.
+          # Signed by withAndroidCiSigning (stable keystore).
           ./gradlew assembleRelease \
             -Dorg.gradle.java.home=$JAVA_HOME \
-            -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64
+            -PreactNativeArchitectures=arm64-v8a
 
       - name: Verify release APK signature
         if: env.BUILD_TYPE == 'release'

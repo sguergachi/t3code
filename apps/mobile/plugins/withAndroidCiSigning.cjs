@@ -20,27 +20,24 @@ module.exports = function withAndroidCiSigning(config) {
       throw new Error("withAndroidCiSigning only supports Groovy build.gradle");
     }
 
-    // Keystore lives at apps/mobile/ci/android-ci.keystore (repo-relative from
-    // the android/ project: ../ci/android-ci.keystore).
+    // app/build.gradle lives at apps/mobile/android/app/build.gradle, so the
+    // committed keystore at apps/mobile/ci/android-ci.keystore is ../../ci/.
     const signingBlock = `
 // --- T3 Code CI signing (stable sideload key; do not use for Play Store) ---
-def t3CiKeystore = file("../ci/android-ci.keystore")
+def t3CiKeystore = file("\${rootProject.projectDir}/../ci/android-ci.keystore")
 android {
     signingConfigs {
         ciRelease {
-            if (t3CiKeystore.exists()) {
-                storeFile t3CiKeystore
-                storePassword "t3code-ci-store"
-                keyAlias "t3code-ci"
-                keyPassword "t3code-ci-store"
-            }
+            storeFile t3CiKeystore
+            storePassword "t3code-ci-store"
+            keyAlias "t3code-ci"
+            keyPassword "t3code-ci-store"
         }
     }
     buildTypes {
         release {
-            if (t3CiKeystore.exists()) {
-                signingConfig signingConfigs.ciRelease
-            }
+            // Always use the stable CI key for sideload APKs when this plugin runs.
+            signingConfig signingConfigs.ciRelease
         }
     }
 }

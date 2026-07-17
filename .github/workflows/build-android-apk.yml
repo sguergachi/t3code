@@ -151,7 +151,7 @@ jobs:
             -Dorg.gradle.java.home=$JAVA_HOME \
             -PreactNativeArchitectures=arm64-v8a
 
-      - name: Verify release APK signature
+      - name: Ensure stable CI signature
         if: env.BUILD_TYPE == 'release'
         working-directory: apps/mobile/android
         run: |
@@ -164,18 +164,40 @@ jobs:
           fi
 
           apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f -print -quit)
-          if [ -z "$apksigner" ]; then
-            echo "apksigner not found" >&2
+          zipalign=$(find "$ANDROID_HOME/build-tools" -name zipalign -type f -print -quit)
+          if [ -z "$apksigner" ] || [ -z "$zipalign" ]; then
+            echo "apksigner or zipalign not found" >&2
             exit 1
           fi
 
-          # Must be signed with the stable CI cert (not an ephemeral key).
-          "$apksigner" verify --print-certs "$apk" | tee /tmp/apk-certs.txt
-          if ! grep -q 'CN=T3 Code CI' /tmp/apk-certs.txt; then
-            echo "Release APK is not signed with the stable T3 Code CI keystore." >&2
-            echo "Ensure T3CODE_ANDROID_CI_SIGNING=1 and apps/mobile/ci/android-ci.keystore exist." >&2
+          keystore="$GITHUB_WORKSPACE/apps/mobile/ci/android-ci.keystore"
+          if [ ! -f "$keystore" ]; then
+            echo "Missing stable CI keystore at $keystore" >&2
             exit 1
           fi
+
+          # Prefer Gradle-applied CI signing; if release fell back to the Android
+          # debug key, re-sign with the stable keystore so updates stay compatible.
+          "$apksigner" verify --print-certs "$apk" | tee /tmp/apk-certs.txt
+          if grep -q 'CN=T3 Code CI' /tmp/apk-certs.txt; then
+            echo "APK already signed with stable T3 Code CI key."
+            exit 0
+          fi
+
+          echo "Re-signing with stable CI keystore (Gradle did not apply ciRelease)."
+          "$zipalign" -f -p 4 "$apk" app-release-aligned.apk
+          "$apksigner" sign \
+            --ks "$keystore" \
+            --ks-pass pass:t3code-ci-store \
+            --ks-key-alias t3code-ci \
+            --key-pass pass:t3code-ci-store \
+            --out app-release-signed.apk \
+            app-release-aligned.apk
+          rm -f "$apk" app-release-aligned.apk
+          mv app-release-signed.apk "$apk"
+          "$apksigner" verify --print-certs "$apk" | tee /tmp/apk-certs.txt
+          grep -q 'CN=T3 Code CI' /tmp/apk-certs.txt
+
 
       - name: Locate built APK
         id: apk-location

@@ -83,6 +83,14 @@ function resolveAppVariant(value: string | undefined): AppVariant {
   }
 }
 
+function resolveAndroidVersionCode(value: string | undefined): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return 1;
+}
+
 const variant = VARIANT_CONFIG[APP_VARIANT];
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
@@ -188,6 +196,9 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    // Bump for sideload updates. CI sets ANDROID_VERSION_CODE (e.g. run number).
+    // Without this every release APK ships versionCode 1 and devices refuse updates.
+    versionCode: resolveAndroidVersionCode(process.env.ANDROID_VERSION_CODE),
     adaptiveIcon: {
       backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
       foregroundImage: variant.assets.androidAdaptiveForeground,

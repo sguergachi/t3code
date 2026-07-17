@@ -56,6 +56,10 @@ jobs:
     steps:
       - id: app_token
         name: Mint release app token
+        # Optional: prefer the release GitHub App when configured (matches
+        # desktop release.yml). Fall back to GITHUB_TOKEN when secrets are
+        # missing so forks/personal repos can still publish APKs.
+        continue-on-error: true
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
@@ -141,7 +145,8 @@ jobs:
             release-publish/*.apk
           fail_on_unmatched_files: true
           overwrite_files: true
-          token: ${{ steps.app_token.outputs.token }}
+          # Prefer the release app token when present; otherwise GITHUB_TOKEN.
+          token: ${{ steps.app_token.outputs.token || github.token }}
 
       - name: Generate publish summary
         if: always()

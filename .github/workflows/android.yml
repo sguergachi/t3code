@@ -44,10 +44,9 @@ jobs:
       build_type: ${{ inputs.build-type || 'release' }}
       build_version: ${{ github.ref_name }}
       runs_on: ubuntu-latest
-      # Distinct applicationId so this APK always installs even when an older
-      # com.t3tools.t3code build (different signing key) is still on the device.
-      # Stable CI signing keeps future android-latest updates installable.
-      android_package_override: com.t3tools.t3code.github
+      # Only override production so an older com.t3tools.t3code (different key)
+      # does not block install. Dev/preview keep their normal package ids.
+      android_package_override: ${{ (inputs.variant || 'production') == 'production' && 'com.t3tools.t3code.github' || '' }}
     secrets: inherit
 
   publish-release:

@@ -44,6 +44,10 @@ jobs:
       build_type: ${{ inputs.build-type || 'release' }}
       build_version: ${{ github.ref_name }}
       runs_on: ubuntu-latest
+      # Distinct applicationId so this APK always installs even when an older
+      # com.t3tools.t3code build (different signing key) is still on the device.
+      # Stable CI signing keeps future android-latest updates installable.
+      android_package_override: com.t3tools.t3code.github
     secrets: inherit
 
   publish-release:
@@ -137,6 +141,8 @@ jobs:
             | **Build type** | `${{ steps.meta.outputs.build_type }}` |
             | **Commit** | `${{ steps.meta.outputs.sha_short }}` |
             | **Workflow run** | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} |
+
+            Sideload package id: `com.t3tools.t3code.github` (installs even if an older `com.t3tools.t3code` is present).
 
             This release is updated on every Mobile APK Build. Download `t3code-android.apk` (production/release) or the variant-specific APK below.
           prerelease: true

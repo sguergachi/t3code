@@ -56,6 +56,11 @@ on:
         required: false
         type: number
         default: 0
+      android_package_override:
+        description: "Optional Android applicationId override (avoids signature conflicts with older sideload installs)"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build-apk:
@@ -75,6 +80,8 @@ jobs:
       ANDROID_VERSION_CODE: ${{ inputs.android_version_code > 0 && inputs.android_version_code || github.run_number }}
       # Enable apps/mobile/plugins/withAndroidCiSigning.cjs → stable release signing.
       T3CODE_ANDROID_CI_SIGNING: "1"
+      # Optional applicationId override (see android.yml for sideload package).
+      T3CODE_ANDROID_PACKAGE_OVERRIDE: ${{ inputs.android_package_override }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
